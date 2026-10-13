@@ -1,0 +1,28 @@
+# ==============================================================================
+# Project CAN-Sentinel: Week 1 - Member 1 Deliverable
+# File: systemd/vcan0.service
+# Description: Systemd unit to persist vcan0 across system reboots
+# Location: /etc/systemd/system/vcan0.service
+# Installation:
+#   sudo cp systemd/vcan0.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now vcan0.service
+# ==============================================================================
+
+[Unit]
+Description=CAN-Sentinel Virtual CAN Interface (vcan0)
+Documentation=https://github.com/can-sentinel/can-sentinel
+After=network.target local-fs.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/sbin/modprobe vcan
+ExecStart=/sbin/ip link add dev vcan0 type vcan
+ExecStartPost=/sbin/ip link set up vcan0
+ExecStop=/sbin/ip link delete vcan0
+ExecStopPost=/sbin/modprobe -r vcan
+
+[Install]
+WantedBy=multi-user.target
