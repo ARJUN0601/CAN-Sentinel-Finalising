@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 INTERFACE = "socketcan"
 CHANNEL = "vcan0"
-LOG_FILE = "can_log.csv"
+LOG_FILE = "data/can_log.csv"
 
 def main():
     print(f"Listening on {CHANNEL}...")
