@@ -22,6 +22,7 @@ def main():
         return
 
     windows = defaultdict(deque)
+    alerted_ids = set()
     alerts = 0
     messages_read = 0
 
@@ -42,13 +43,17 @@ def main():
             while recent and timestamp - recent[0] > WINDOW_SECONDS:
                 recent.popleft()
 
-            if len(recent) == THRESHOLD:
-                alerts += 1
-                print(
-                    f"ALERT: CAN ID {can_id} sent "
-                    f"{len(recent)} messages within "
-                    f"{WINDOW_SECONDS:.0f} seconds"
-                )
+        if len(recent) >= THRESHOLD and can_id not in alerted_ids:
+            alerts += 1
+            alerted_ids.add(can_id)
+            print(
+            f"ALERT: CAN ID {can_id} sent "
+            f"{len(recent)} messages within "
+            f"{WINDOW_SECONDS:.0f} seconds"
+       )
+
+        elif len(recent) < THRESHOLD:
+            alerted_ids.discard(can_id)
 
     print("\nTime-window detection summary")
     print(f"Messages analysed: {messages_read}")
