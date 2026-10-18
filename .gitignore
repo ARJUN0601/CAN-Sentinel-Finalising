@@ -4,3 +4,4 @@ __pycache__/
 .env
 .vscode/
 src/detection/*.bak
+data/can_log_test.csv
