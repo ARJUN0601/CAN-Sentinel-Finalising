@@ -1,5 +1,5 @@
 # ==============================================================================
-# Project CAN-Sentinel: Week 1 - Member 1 Automation Makefile
+# Project CAN-Sentinel: Member 1 + Member 2
 # ==============================================================================
 
 CC ?= gcc
@@ -8,45 +8,51 @@ INTERFACE ?= vcan0
 
 BIN_DIR = bin
 SRC_DIR = src
+
 TARGET = $(BIN_DIR)/vcan_checker
+STEERING_TARGET = $(BIN_DIR)/steering_ecu
+RPM_TARGET = $(BIN_DIR)/rpm_ecu
 
 .PHONY: all setup test teardown clean status deps install-service
 
-all: $(TARGET)
+all: $(TARGET) $(STEERING_TARGET) $(RPM_TARGET)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
 $(TARGET): $(SRC_DIR)/vcan_checker.c | $(BIN_DIR)
-	@echo ">> Compiling Member 1 C low-level SocketCAN verification program..."
+	@echo ">> Compiling Member 1 SocketCAN verification program..."
 	$(CC) $(CFLAGS) $< -o $@
 	@echo ">> Build complete: $@"
 
-# Automated setup of vcan0
+$(STEERING_TARGET): $(SRC_DIR)/steering_ecu.c | $(BIN_DIR)
+	@echo ">> Compiling Member 2 Steering ECU..."
+	$(CC) $(CFLAGS) $< -o $@
+
+$(RPM_TARGET): $(SRC_DIR)/rpm_ecu.c | $(BIN_DIR)
+	@echo ">> Compiling Member 2 Engine RPM ECU..."
+	$(CC) $(CFLAGS) $< -o $@
+
 setup:
-	@echo ">> Running Member 1 automated vcan0 setup script..."
-	sudo ./scripts/setup_vcan0.sh $(INTERFACE)
+	@echo ">> Running vcan0 setup script..."
+	sudo bash scripts/setup_vcan0.sh $(INTERFACE)
 
-# Run verification test
-test: $(TARGET)
-	@echo ">> Running low-level C SocketCAN validation suite..."
-	./$(TARGET) $(INTERFACE)
+test: all
+	@echo ">> Running CAN-Sentinel integration test suite..."
+	bash tests/test_suite.sh $(INTERFACE)
 
-# Quick health status check
 status:
-	@./scripts/check_vcan0.sh $(INTERFACE)
+	@bash scripts/check_vcan0.sh $(INTERFACE)
 
-# Teardown interface
 teardown:
 	@echo ">> Tearing down vcan0 interface..."
-	sudo ./scripts/teardown_vcan0.sh $(INTERFACE)
+	sudo bash scripts/teardown_vcan0.sh $(INTERFACE)
 
-# Install system dependencies on Ubuntu/Debian/Raspberry Pi
 deps:
 	@echo ">> Installing can-utils, iproute2, and build-essential..."
-	sudo apt-get update && sudo apt-get install -y can-utils iproute2 build-essential kmod
+	sudo apt-get update
+	sudo apt-get install -y can-utils iproute2 build-essential kmod
 
-# Install persistent systemd service
 install-service:
 	@echo ">> Installing persistent systemd service for vcan0..."
 	sudo cp systemd/vcan0.service /etc/systemd/system/
