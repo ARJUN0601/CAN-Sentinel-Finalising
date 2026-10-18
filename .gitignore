@@ -1,0 +1,11 @@
+# Compiled binaries
+/bin/
+
+# Backup files
+*.backup
+*.backup-*
+*.bak
+
+# Temporary files
+*.tmp
+*~
