@@ -6,7 +6,8 @@ from datetime import datetime
 
 INTERFACE = "socketcan"
 CHANNEL = "vcan0"
-LOG_FILE = "can_log.csv"
+LOG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "can_log.csv")
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 def main():
     print("===================================")
