@@ -27,3 +27,10 @@ Verify that the Python CAN logger captures CAN frames and saves them to a CSV fi
 The CAN logger successfully captured a simulated CAN frame and saved its details to a CSV file.
 
 **Note:** Testing used a virtual CAN interface and simulated traffic, not a physical vehicle or CAN bus.
+
+## Additional Test Summary
+
+- **Additional frames captured:** 30
+- **CAN IDs tested:** `0x101` to `0x11E`
+- **Result:** All 30 additional simulated CAN frames were captured by the logger.
+- **Output file:** `can_log.csv`
