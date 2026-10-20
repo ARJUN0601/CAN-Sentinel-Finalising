@@ -34,3 +34,14 @@ The CAN logger successfully captured a simulated CAN frame and saved its details
 - **CAN IDs tested:** `0x101` to `0x11E`
 - **Result:** All 30 additional simulated CAN frames were captured by the logger.
 - **Output file:** `can_log.csv`
+
+## Updated Logger Verification — 20 October 2026
+
+- Script tested: `can_logger_updated.py`
+- Interface: `vcan0`
+- Test frame: `0x123`
+- Payload: `DE AD BE EF`
+- Result: Successfully captured the simulated CAN frame.
+- CSV verification: Confirmed the timestamp, CAN ID, extended ID, DLC, and payload were saved correctly.
+
+**Outcome:** Updated logger verification successful using simulated CAN traffic.
