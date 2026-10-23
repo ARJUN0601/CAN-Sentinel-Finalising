@@ -1,4 +1,3 @@
-
 /*
  * CAN-Sentinel — Member 3
  * Mock Vehicle Speed ECU
@@ -30,7 +29,8 @@
 int main(int argc, char *argv[])
 {
     const char *interface;
-    unsigned long speed = 0;
+    double speed_kmh = 0.0;
+    unsigned long encoded_speed;
     char *end = NULL;
 
     if (argc < 2 || argc > 3) {
@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 
     if (argc == 3) {
         errno = 0;
-        speed = strtoul(argv[2], &end, 10);
+        speed_kmh = strtod(argv[2], &end);
 
         if (errno != 0 || end == argv[2] || *end != '\0') {
             fprintf(stderr, "Invalid speed value: %s\n", argv[2]);
@@ -51,10 +51,12 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (speed > SPEED_MAX) {
-        fprintf(stderr, "Encoded speed must be between 0 and 65535.\n");
+    if (speed_kmh < 0.0 || speed_kmh > 655.35) {
+        fprintf(stderr, "Speed must be between 0 and 655.35 km/h.\n");
         return EXIT_FAILURE;
     }
+
+    encoded_speed = (unsigned long)(speed_kmh * 100.0 + 0.5);
 
     int socket_fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (socket_fd < 0) {
@@ -89,13 +91,14 @@ int main(int argc, char *argv[])
     frame.can_id = SPEED_CAN_ID;
     frame.can_dlc = 2;
 
-    frame.data[0] = (uint8_t)(speed & 0xffUL);
-    frame.data[1] = (uint8_t)((speed >> 8) & 0xffUL);
+    frame.data[0] = (uint8_t)(encoded_speed & 0xffUL);
+    frame.data[1] = (uint8_t)((encoded_speed >> 8) & 0xffUL);
 
     printf("CAN-Sentinel Vehicle Speed ECU\n");
     printf("Interface: %s | CAN ID: 0x%03X\n",
            interface, SPEED_CAN_ID);
-    printf("Encoded speed: %lu | Interval: 50 ms\n", speed);
+    printf("Speed: %.2f km/h | Encoded value: %lu | Interval: 50 ms\n",
+           speed_kmh, encoded_speed);
     printf("Press Ctrl+C to stop.\n");
     fflush(stdout);
 
@@ -107,7 +110,7 @@ int main(int argc, char *argv[])
         }
 
         printf("TX ID=0x%03X DLC=%u Speed=%.2f km/h Data=%02X %02X\n",
-               frame.can_id, frame.can_dlc, speed / 100.0,
+               frame.can_id, frame.can_dlc, speed_kmh,
                frame.data[0], frame.data[1]);
         fflush(stdout);
 
