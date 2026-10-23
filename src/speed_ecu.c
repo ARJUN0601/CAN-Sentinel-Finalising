@@ -1,14 +1,3 @@
-/*
- * CAN-Sentinel — Member 3
- * Mock Vehicle Speed ECU
- *
- * CAN ID: 0x240
- * Payload: unsigned 16-bit speed, little-endian
- * Unit: km/h * 100
- * Range: 0.00 to 655.35 km/h
- * Nominal transmission interval: 50 ms
- */
-
 #include <errno.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
@@ -23,7 +12,6 @@
 #include <unistd.h>
 
 #define SPEED_CAN_ID 0x240
-#define SPEED_MAX 65535U
 #define PERIOD_NS 50000000L
 
 int main(int argc, char *argv[])
@@ -34,8 +22,7 @@ int main(int argc, char *argv[])
     char *end = NULL;
 
     if (argc < 2 || argc > 3) {
-        fprintf(stderr, "Usage: %s <interface> [speed_kmh]\n",
-                argv[0]);
+        fprintf(stderr, "Usage: %s <interface> [speed_kmh]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -52,7 +39,7 @@ int main(int argc, char *argv[])
     }
 
     if (speed_kmh < 0.0 || speed_kmh > 655.35) {
-        fprintf(stderr, "Speed must be between 0 and 655.35 km/h.\n");
+        fprintf(stderr, "Speed must be between 0.00 and 655.35 km/h.\n");
         return EXIT_FAILURE;
     }
 
@@ -79,8 +66,7 @@ int main(int argc, char *argv[])
     address.can_family = AF_CAN;
     address.can_ifindex = ifr.ifr_ifindex;
 
-    if (bind(socket_fd, (struct sockaddr *)&address,
-             sizeof(address)) < 0) {
+    if (bind(socket_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("bind");
         close(socket_fd);
         return EXIT_FAILURE;
@@ -90,13 +76,11 @@ int main(int argc, char *argv[])
     memset(&frame, 0, sizeof(frame));
     frame.can_id = SPEED_CAN_ID;
     frame.can_dlc = 2;
-
     frame.data[0] = (uint8_t)(encoded_speed & 0xffUL);
     frame.data[1] = (uint8_t)((encoded_speed >> 8) & 0xffUL);
 
     printf("CAN-Sentinel Vehicle Speed ECU\n");
-    printf("Interface: %s | CAN ID: 0x%03X\n",
-           interface, SPEED_CAN_ID);
+    printf("Interface: %s | CAN ID: 0x%03X\n", interface, SPEED_CAN_ID);
     printf("Speed: %.2f km/h | Encoded value: %lu | Interval: 50 ms\n",
            speed_kmh, encoded_speed);
     printf("Press Ctrl+C to stop.\n");
@@ -119,9 +103,7 @@ int main(int argc, char *argv[])
             .tv_nsec = PERIOD_NS
         };
 
-        while (nanosleep(&delay, &delay) == -1 && errno == EINTR) {
-            /* Resume sleeping if interrupted. */
-        }
+        nanosleep(&delay, NULL);
     }
 
     close(socket_fd);
