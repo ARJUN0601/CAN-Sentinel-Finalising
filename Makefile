@@ -1,4 +1,4 @@
-makefile
+
 # CAN-Sentinel: Build Member 1, Member 2, and Member 3 programs
 
 CC = gcc
