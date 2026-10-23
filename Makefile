@@ -1,4 +1,4 @@
-```makefile
+makefile
 # CAN-Sentinel: Build Member 1, Member 2, and Member 3 programs
 
 CC = gcc
@@ -44,4 +44,4 @@ test: all
 
 clean:
 	rm -rf $(BIN_DIR)
-```
+
