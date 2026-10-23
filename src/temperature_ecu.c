@@ -1,4 +1,4 @@
-```c
+
 /*
  * CAN-Sentinel — Member 3
  * Mock Engine Temperature ECU
@@ -123,4 +123,3 @@ int main(int argc, char *argv[])
     close(socket_fd);
     return EXIT_SUCCESS;
 }
-```
