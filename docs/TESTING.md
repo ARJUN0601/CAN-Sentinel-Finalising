@@ -45,3 +45,29 @@
 Both Member 3 ECU programs successfully transmitted their expected CAN frames over the virtual `vcan0` interface, and the received CAN IDs and payloads matched the expected values.
 
 **Note:** These tests used a virtual CAN interface and do not represent testing on a physical vehicle CAN bus.
+
+## Week 2: Dynamic ECU Testing
+
+### 1. Dynamic Vehicle Speed ECU
+- **Source file:** `src/speed_ecu_week2.c`
+- **CAN ID:** `0x240`
+- **Payload length:** 2 bytes
+- **Transmission interval:** 50 ms
+- **Test result:** Successfully transmitted and received changing speed values using the virtual CAN interface `vcan0`.
+- **Observed behavior:** Speed increased from 0 to 80 km/h and then decreased back toward 0, repeating continuously.
+- **Encoding:** Speed is represented as km/h multiplied by 100 and stored in a two-byte little-endian value.
+
+### 2. Dynamic Engine Temperature ECU
+- **Source file:** `src/temperature_ecu_week2.c`
+- **CAN ID:** `0x250`
+- **Payload length:** 1 byte
+- **Transmission interval:** 100 ms
+- **Test result:** Successfully transmitted and received changing temperature values using `candump -tz vcan0`.
+- **Observed behavior:** Temperature varied between 80°C and 100°C, increasing and decreasing continuously.
+- **Encoding:** Temperature is represented as a single byte.
+
+### Testing Environment
+- Operating system: Ubuntu Linux
+- CAN interface: `vcan0`
+- Monitoring tool: `candump` from `can-utils`
+- **Conclusion:** Both dynamic ECUs were compiled and tested successfully. Their CAN frames were received on the virtual CAN interface. These tests used simulated traffic, not a physical vehicle.
