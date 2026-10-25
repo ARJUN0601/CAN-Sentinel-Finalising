@@ -41,7 +41,9 @@ for program in \
     bin/steering_ecu \
     bin/rpm_ecu \
     bin/speed_ecu \
-    bin/temperature_ecu
+    bin/temperature_ecu \
+    bin/speed_ecu_week2 \
+    bin/temperature_ecu_week2
 do
     if [[ -x "$program" ]]; then
         echo "[PASS] $program exists and is executable"
