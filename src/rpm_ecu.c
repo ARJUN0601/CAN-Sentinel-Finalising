@@ -1,12 +1,7 @@
-
 /*
  * CAN-Sentinel — Member 2
  * Mock Engine RPM ECU
- *
- * CAN ID: 0x130
- * Payload: unsigned 16-bit RPM, little-endian
- * Range: 0–8000 RPM
- * Nominal transmission interval: 10 ms
+ * CAN ID: 0x130; uint16 little-endian; 10 ms period.
  */
 
 #include <errno.h>
@@ -23,103 +18,83 @@
 #include <unistd.h>
 
 #define RPM_CAN_ID 0x130
-#define RPM_MIN    0
-#define RPM_MAX    8000
-#define PERIOD_NS  10000000L
+#define RPM_MAX 8000UL
+#define PERIOD_NS 10000000L
 
 int main(int argc, char *argv[])
 {
-	const char *interface = "vcan0";
-	unsigned long rpm = 0;
-	char *end = NULL;
+    if (argc < 2 || argc > 4) {
+        fprintf(stderr, "Usage: %s <interface> [rpm] [normal|attacked]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
-	if (argc < 2 || argc > 3) {
-		fprintf(stderr, "Usage: %s <interface> [rpm]\n", argv[0]);
-		return EXIT_FAILURE;
-	}
+    const char *interface = argv[1];
+    unsigned long rpm = 0;
+    const char *mode = "normal";
+    char *end = NULL;
 
-	interface = argv[1];
+    if (argc >= 3) {
+        errno = 0;
+        rpm = strtoul(argv[2], &end, 10);
+        if (errno || end == argv[2] || *end != '\0') {
+            fprintf(stderr, "Invalid RPM value: %s\n", argv[2]);
+            return EXIT_FAILURE;
+        }
+    }
 
-	if (argc == 3) {
-		errno = 0;
-		rpm = strtoul(argv[2], &end, 10);
+    if (argc == 4) mode = argv[3];
 
-		if (errno != 0 || end == argv[2] || *end != '\0') {
-			fprintf(stderr, "Invalid RPM value: %s\n", argv[2]);
-			return EXIT_FAILURE;
-		}
-	}
+    if (rpm > RPM_MAX ||
+        (strcmp(mode, "normal") && strcmp(mode, "attacked"))) {
+        fprintf(stderr, "RPM must be 0-8000; mode must be normal or attacked.\n");
+        return EXIT_FAILURE;
+    }
 
-	if (rpm > RPM_MAX) {
-		fprintf(stderr, "RPM must be between 0 and 8000.\n");
-		return EXIT_FAILURE;
-	}
+    if (!strcmp(mode, "attacked") && strcmp(interface, "vcan0")) {
+        fprintf(stderr, "Attacked simulation is restricted to vcan0.\n");
+        return EXIT_FAILURE;
+    }
 
-	int socket_fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-	if (socket_fd < 0) {
-		perror("socket");
-		return EXIT_FAILURE;
-	}
+    int fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+    if (fd < 0) { perror("socket"); return EXIT_FAILURE; }
 
-	struct ifreq ifr;
-	memset(&ifr, 0, sizeof(ifr));
-	snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", interface);
+    struct ifreq ifr = {0};
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", interface);
+    if (ioctl(fd, SIOCGIFINDEX, &ifr) < 0) {
+        perror("SIOCGIFINDEX"); close(fd); return EXIT_FAILURE;
+    }
 
-	if (ioctl(socket_fd, SIOCGIFINDEX, &ifr) < 0) {
-		perror("SIOCGIFINDEX");
-		close(socket_fd);
-		return EXIT_FAILURE;
-	}
+    struct sockaddr_can addr = {0};
+    addr.can_family = AF_CAN;
+    addr.can_ifindex = ifr.ifr_ifindex;
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind"); close(fd); return EXIT_FAILURE;
+    }
 
-	struct sockaddr_can address;
-	memset(&address, 0, sizeof(address));
-	address.can_family = AF_CAN;
-	address.can_ifindex = ifr.ifr_ifindex;
+    printf("RPM ECU | interface=%s | mode=%s | CAN ID=0x%03X\n",
+           interface, mode, RPM_CAN_ID);
+    fflush(stdout);
 
-	if (bind(socket_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-		perror("bind");
-		close(socket_fd);
-		return EXIT_FAILURE;
-	}
+    unsigned int tick = 0;
+    for (;;) {
+        unsigned long value = rpm;
+        if (!strcmp(mode, "attacked") && (tick % 2)) value = 7500;
 
-	struct can_frame frame;
-	memset(&frame, 0, sizeof(frame));
-	frame.can_id = RPM_CAN_ID;
-	frame.can_dlc = 2;
+        struct can_frame frame = {0};
+        frame.can_id = RPM_CAN_ID;
+        frame.can_dlc = 2;
+        frame.data[0] = value & 0xffUL;
+        frame.data[1] = (value >> 8) & 0xffUL;
 
-	/* Serialize the RPM value explicitly in little-endian order. */
-	frame.data[0] = (uint8_t)(rpm & 0xffUL);
-	frame.data[1] = (uint8_t)((rpm >> 8) & 0xffUL);
+        if (write(fd, &frame, sizeof(frame)) != sizeof(frame)) {
+            perror("CAN frame write"); close(fd); return EXIT_FAILURE;
+        }
 
-	printf("CAN-Sentinel Engine RPM ECU\n");
-	printf("Interface: %s | CAN ID: 0x%03X\n",
-		   interface, RPM_CAN_ID);
-	printf("RPM: %lu | Interval: 10 ms\n", rpm);
-	printf("Press Ctrl+C to stop.\n");
-	fflush(stdout);
+        printf("TX mode=%s rpm=%lu\n", mode, value);
+        fflush(stdout);
+        tick++;
 
-	for (;;) {
-		if (write(socket_fd, &frame, sizeof(frame)) != sizeof(frame)) {
-			perror("CAN frame write");
-			close(socket_fd);
-			return EXIT_FAILURE;
-		}
-
-		printf("TX ID=0x%03X DLC=%u RPM=%lu Data=%02X %02X\n",
-			   frame.can_id, frame.can_dlc, rpm,
-		 frame.data[0], frame.data[1]);
-		fflush(stdout);
-
-		struct timespec delay = {
-			.tv_sec = 0,
-			.tv_nsec = PERIOD_NS
-		};
-
-		while (nanosleep(&delay, &delay) == -1 && errno == EINTR) {
-			/* Resume sleeping if interrupted. */
-		}
-	}
-
-	close(socket_fd);
-	return EXIT_SUCCESS;
+        struct timespec delay = { .tv_sec = 0, .tv_nsec = PERIOD_NS };
+        while (nanosleep(&delay, &delay) == -1 && errno == EINTR) {}
+    }
 }

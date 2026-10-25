@@ -1,12 +1,7 @@
-
 /*
  * CAN-Sentinel — Member 2
  * Mock Steering ECU
- *
- * CAN ID: 0x120
- * Payload: IEEE 754 float32, little-endian
- * Range: -540.0 to +540.0 degrees
- * Nominal transmission interval: 20 ms
+ * CAN ID: 0x120; float32 little-endian; 20 ms period.
  */
 
 #include <errno.h>
@@ -23,129 +18,96 @@
 #include <unistd.h>
 
 #define STEERING_CAN_ID 0x120
-#define STEERING_MIN   (-540.0f)
-#define STEERING_MAX   (540.0f)
-#define PERIOD_NS      20000000L
+#define STEERING_MIN (-540.0f)
+#define STEERING_MAX (540.0f)
+#define PERIOD_NS 20000000L
 
-static void sleep_until_next_frame(void)
+static void pause_period(void)
 {
-	struct timespec delay = {
-		.tv_sec = 0,
-		.tv_nsec = PERIOD_NS
-	};
-
-	while (nanosleep(&delay, &delay) == -1 && errno == EINTR) {
-		/* Resume sleeping if interrupted. */
-	}
+    struct timespec delay = { .tv_sec = 0, .tv_nsec = PERIOD_NS };
+    while (nanosleep(&delay, &delay) == -1 && errno == EINTR) {}
 }
 
 int main(int argc, char *argv[])
 {
-	const char *interface = argc > 1 ? argv[1] : "vcan0";
-	char *end = NULL;
+    const char *interface = "vcan0";
+    const char *mode = "normal";
+    float angle = 0.0f;
+    char *end = NULL;
+    int arg = 1;
 
-	if (argc > 3) {
-		fprintf(stderr, "Usage: %s [interface] [degrees]\n", argv[0]);
-		return EXIT_FAILURE;
-	}
+    if (arg < argc && argv[arg][0] != '-') interface = argv[arg++];
 
-	float steering_degrees = 0.0f;
+    if (arg < argc) {
+        errno = 0;
+        angle = strtof(argv[arg], &end);
+        if (errno || end == argv[arg] || *end != '\0') {
+            fprintf(stderr, "Invalid steering angle: %s\n", argv[arg]);
+            return EXIT_FAILURE;
+        }
+        arg++;
+    }
 
-	if (argc == 2) {
-		/*
-		 * One argument is interpreted as the interface name.
-		 * Steering angle can optionally be supplied as a second argument.
-		 */
-	}
+    if (arg < argc) mode = argv[arg++];
 
-	if (argc == 3) {
-		errno = 0;
-		steering_degrees = strtof(argv[2], &end);
+    if (arg != argc || (strcmp(mode, "normal") && strcmp(mode, "attacked"))) {
+        fprintf(stderr, "Usage: %s [interface] [degrees] [normal|attacked]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
-		if (errno != 0 || end == argv[2] || *end != '\0') {
-			fprintf(stderr, "Invalid steering angle: %s\n", argv[2]);
-			return EXIT_FAILURE;
-		}
-	}
+    if (angle < STEERING_MIN || angle > STEERING_MAX) {
+        fprintf(stderr, "Angle must be between -540 and +540 degrees.\n");
+        return EXIT_FAILURE;
+    }
 
-	if (steering_degrees < STEERING_MIN ||
-		steering_degrees > STEERING_MAX) {
-		fprintf(stderr, "Angle must be between -540 and +540 degrees.\n");
-	return EXIT_FAILURE;
-		}
+    if (!strcmp(mode, "attacked") && strcmp(interface, "vcan0")) {
+        fprintf(stderr, "Attacked simulation is restricted to vcan0.\n");
+        return EXIT_FAILURE;
+    }
 
-		int socket_fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-		if (socket_fd < 0) {
-			perror("socket");
-			return EXIT_FAILURE;
-		}
+    int fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+    if (fd < 0) { perror("socket"); return EXIT_FAILURE; }
 
-		struct ifreq ifr;
-		memset(&ifr, 0, sizeof(ifr));
-		snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", interface);
+    struct ifreq ifr = {0};
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", interface);
+    if (ioctl(fd, SIOCGIFINDEX, &ifr) < 0) {
+        perror("SIOCGIFINDEX"); close(fd); return EXIT_FAILURE;
+    }
 
-		if (ioctl(socket_fd, SIOCGIFINDEX, &ifr) < 0) {
-			perror("SIOCGIFINDEX");
-			close(socket_fd);
-			return EXIT_FAILURE;
-		}
+    struct sockaddr_can addr = {0};
+    addr.can_family = AF_CAN;
+    addr.can_ifindex = ifr.ifr_ifindex;
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind"); close(fd); return EXIT_FAILURE;
+    }
 
-		struct sockaddr_can address;
-		memset(&address, 0, sizeof(address));
-		address.can_family = AF_CAN;
-		address.can_ifindex = ifr.ifr_ifindex;
+    printf("Steering ECU | interface=%s | mode=%s | CAN ID=0x%03X\n",
+           interface, mode, STEERING_CAN_ID);
+    fflush(stdout);
 
-		if (bind(socket_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-			perror("bind");
-			close(socket_fd);
-			return EXIT_FAILURE;
-		}
+    unsigned int tick = 0;
+    for (;;) {
+        float value = angle;
+        if (!strcmp(mode, "attacked") && (tick % 2)) value = 180.0f;
 
-		struct can_frame frame;
-		memset(&frame, 0, sizeof(frame));
-		frame.can_id = STEERING_CAN_ID;
-		frame.can_dlc = 4;
+        uint32_t bits;
+        memcpy(&bits, &value, sizeof(bits));
 
-		/*
-		 * Copy the float's IEEE 754 bit pattern into a 32-bit integer,
-		 * then explicitly serialize it in little-endian byte order.
-		 */
-		uint32_t bits;
-		memcpy(&bits, &steering_degrees, sizeof(bits));
+        struct can_frame frame = {0};
+        frame.can_id = STEERING_CAN_ID;
+        frame.can_dlc = 4;
+        frame.data[0] = bits & 0xffU;
+        frame.data[1] = (bits >> 8) & 0xffU;
+        frame.data[2] = (bits >> 16) & 0xffU;
+        frame.data[3] = (bits >> 24) & 0xffU;
 
-		frame.data[0] = (uint8_t)(bits & 0xffU);
-		frame.data[1] = (uint8_t)((bits >> 8) & 0xffU);
-		frame.data[2] = (uint8_t)((bits >> 16) & 0xffU);
-		frame.data[3] = (uint8_t)((bits >> 24) & 0xffU);
+        if (write(fd, &frame, sizeof(frame)) != sizeof(frame)) {
+            perror("CAN frame write"); close(fd); return EXIT_FAILURE;
+        }
 
-		printf("CAN-Sentinel Steering ECU\n");
-		printf("Interface: %s | CAN ID: 0x%03X\n",
-			   interface, STEERING_CAN_ID);
-		printf("Angle: %.2f degrees | Interval: 20 ms\n",
-			   steering_degrees);
-		printf("Press Ctrl+C to stop.\n");
-		fflush(stdout);
-
-		for (;;) {
-			if (write(socket_fd, &frame, sizeof(frame)) != sizeof(frame)) {
-				perror("CAN frame write");
-				close(socket_fd);
-				return EXIT_FAILURE;
-			}
-
-			printf("TX ID=0x%03X DLC=%u Angle=%.2f deg Data=",
-				   frame.can_id, frame.can_dlc, steering_degrees);
-
-			for (int i = 0; i < frame.can_dlc; i++) {
-				printf("%02X%s", frame.data[i],
-					   i + 1 < frame.can_dlc ? " " : "");
-			}
-			putchar('\n');
-			fflush(stdout);
-
-			sleep_until_next_frame();
-		}
-
-		close(socket_fd);
-		return EXIT_SUCCESS;
+        printf("TX mode=%s angle=%.2f\n", mode, value);
+        fflush(stdout);
+        tick++;
+        pause_period();
+    }
 }
