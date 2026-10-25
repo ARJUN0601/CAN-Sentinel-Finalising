@@ -1,11 +1,28 @@
+
 # Compiled binaries
 /bin/
+bin/
 
 # Backup files
 *.backup
 *.backup-*
 *.bak
+Makefile.member1-backup
+tests/test_suite.member1-backup.sh
 
 # Temporary files
 *.tmp
 *~
+
+# Python virtual environments and cache
+.venv/
+__pycache__/
+*.py[cod]
+
+# Environment variables and editor settings
+.env
+.vscode/
+
+# Detection test backups and generated logs
+src/detection/*.bak
+data/can_log_test.csv
