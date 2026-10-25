@@ -1,4 +1,3 @@
-
 # CAN-Sentinel: Build Member 1, Member 2, and Member 3 programs
 
 CC = gcc
@@ -13,10 +12,12 @@ STEERING_TARGET = $(BIN_DIR)/steering_ecu
 RPM_TARGET = $(BIN_DIR)/rpm_ecu
 SPEED_TARGET = $(BIN_DIR)/speed_ecu
 TEMP_TARGET = $(BIN_DIR)/temperature_ecu
+SPEED_WEEK2_TARGET = $(BIN_DIR)/speed_ecu_week2
+TEMP_WEEK2_TARGET = $(BIN_DIR)/temperature_ecu_week2
 
 .PHONY: all setup test clean
 
-all: $(TARGET) $(STEERING_TARGET) $(RPM_TARGET) $(SPEED_TARGET) $(TEMP_TARGET)
+all: $(TARGET) $(STEERING_TARGET) $(RPM_TARGET) $(SPEED_TARGET) $(TEMP_TARGET) $(SPEED_WEEK2_TARGET) $(TEMP_WEEK2_TARGET)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -36,6 +37,12 @@ $(SPEED_TARGET): $(SRC_DIR)/speed_ecu.c | $(BIN_DIR)
 $(TEMP_TARGET): $(SRC_DIR)/temperature_ecu.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) $< -o $@
 
+$(SPEED_WEEK2_TARGET): $(SRC_DIR)/speed_ecu_week2.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) $< -o $@
+
+$(TEMP_WEEK2_TARGET): $(SRC_DIR)/temperature_ecu_week2.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) $< -o $@
+
 setup:
 	sudo bash scripts/setup_vcan0.sh $(INTERFACE)
 
@@ -44,4 +51,3 @@ test: all
 
 clean:
 	rm -rf $(BIN_DIR)
-
