@@ -71,3 +71,26 @@ Both Member 3 ECU programs successfully transmitted their expected CAN frames ov
 - CAN interface: `vcan0`
 - Monitoring tool: `candump` from `can-utils`
 - **Conclusion:** Both dynamic ECUs were compiled and tested successfully. Their CAN frames were received on the virtual CAN interface. These tests used simulated traffic, not a physical vehicle.
+
+## Automated Build and Test Results
+
+### Build Verification
+
+* Updated the root `Makefile` to include the Week 2 dynamic speed and temperature ECUs.
+* Successfully compiled all seven project programs using `make clean && make`.
+* No compilation errors or warnings were reported.
+
+### Test Suite Verification
+
+* Updated `tests/test_suite.sh` to check all seven required executable programs.
+* Preserved the existing ECU input-validation checks.
+* Executed the test suite using `make test`.
+
+**Results:**
+
+* Tests passed: 11
+* Tests failed: 0
+
+**Note:** The automated suite checks executable availability and input validation. Dynamic CAN transmissions from the Week 2 ECUs were verified separately through manual testing.
+
+**Overall status: PASS**
