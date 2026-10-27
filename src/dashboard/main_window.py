@@ -1,12 +1,43 @@
 
 import sys
+import threading
+import can
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget,
+    QApplication, QMainWindow, QWidget, QPlainTextEdit,
     QVBoxLayout, QHBoxLayout, QLabel,
     QFrame
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QFont
+
+
+
+class CANBridge(QObject):
+    message = pyqtSignal(str)
+
+
+class CANReader(threading.Thread):
+    def __init__(self, callback):
+        super().__init__(daemon=True)
+        self.callback = callback
+        self.stop_event = threading.Event()
+
+    def run(self):
+        try:
+            with can.Bus(interface="socketcan", channel="vcan0") as bus:
+                while not self.stop_event.is_set():
+                    msg = bus.recv(timeout=0.5)
+                    if msg is not None:
+                        text = (
+                            f"ID 0x{msg.arbitration_id:03X} | "
+                            f"DLC {msg.dlc} | DATA {msg.data.hex(' ').upper()}"
+                        )
+                        self.callback(text)
+        except Exception as exc:
+            self.callback(f"CAN reader error: {exc}")
+
+    def stop(self):
+        self.stop_event.set()
 
 
 class CANSentinelDashboard(QMainWindow):
@@ -86,6 +117,20 @@ class CANSentinelDashboard(QMainWindow):
             panels.addWidget(panel)
         self.panels[heading] = panel
 
+        if heading == "CAN Traffic":
+            self.can_traffic_view = QPlainTextEdit()
+            self.can_traffic_view.setReadOnly(True)
+            self.can_traffic_view.setPlaceholderText(
+                "CAN messages will appear here when connected."
+            )
+            self.can_traffic_view.setMaximumBlockCount(500)
+            panel_layout.addWidget(self.can_traffic_view)
+            self.can_bridge.message.connect(self.can_traffic_view.appendPlainText)
+
+        self.can_bridge = CANBridge()
+        self.can_reader = CANReader(self.can_bridge.message.emit)
+        self.can_reader.start()
+
         main_layout.addLayout(panels, 1)
 
         footer = QLabel(
@@ -94,6 +139,13 @@ class CANSentinelDashboard(QMainWindow):
         footer.setObjectName("muted")
         footer.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(footer)
+
+
+    def closeEvent(self, event):
+        if hasattr(self, "can_reader"):
+            self.can_reader.stop()
+            self.can_reader.join(timeout=1.0)
+        event.accept()
 
 
 if __name__ == "__main__":
