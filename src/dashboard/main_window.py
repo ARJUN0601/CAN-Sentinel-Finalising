@@ -59,6 +59,7 @@ class CANSentinelDashboard(QMainWindow):
         # Dashboard panels
         panels = QHBoxLayout()
         panels.setSpacing(16)
+        self.panels = {}
 
         for heading, description in [
             ("CAN Traffic", "Live packet stream will appear here."),
@@ -83,6 +84,7 @@ class CANSentinelDashboard(QMainWindow):
             panel_layout.addStretch()
 
             panels.addWidget(panel)
+        self.panels[heading] = panel
 
         main_layout.addLayout(panels, 1)
 
