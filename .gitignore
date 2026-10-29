@@ -26,3 +26,7 @@ __pycache__/
 # Detection test backups and generated logs
 src/detection/*.bak
 data/can_log_test.csv
+
+# Node.js / React frontend generated files
+node_modules/
+dist/
