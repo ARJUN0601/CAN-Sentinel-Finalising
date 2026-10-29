@@ -90,7 +90,7 @@ load_kernel_modules() {
     fi
 
     # Confirm loaded modules
-    if lsmod | grep -q "^vcan"; then
+    if grep -q "^vcan " /proc/modules; then
         log_success "Kernel module 'vcan' is actively loaded."
     else
         log_error "'vcan' module was not found in active module list."

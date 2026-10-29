@@ -12,10 +12,9 @@ SRC_DIR = src
 TARGET = $(BIN_DIR)/vcan_checker
 STEERING_TARGET = $(BIN_DIR)/steering_ecu
 RPM_TARGET = $(BIN_DIR)/rpm_ecu
-
-.PHONY: all setup test teardown clean status deps install-service
-
-all: $(TARGET) $(STEERING_TARGET) $(RPM_TARGET)
+SPEED_TARGET = $(BIN_DIR)/speed_ecu
+TEMP_TARGET = $(BIN_DIR)/temperature_ecu
+SPEED_TEMP_TARGET = $(BIN_DIR)/speed_temp_ecu
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -32,6 +31,22 @@ $(STEERING_TARGET): $(SRC_DIR)/steering_ecu.c | $(BIN_DIR)
 $(RPM_TARGET): $(SRC_DIR)/rpm_ecu.c | $(BIN_DIR)
 	@echo ">> Compiling Member 2 Engine RPM ECU..."
 	$(CC) $(CFLAGS) $< -o $@
+
+$(SPEED_TARGET): $(SRC_DIR)/speed_ecu.c | $(BIN_DIR)
+	@echo ">> Compiling Member 3 Vehicle Speed ECU..."
+	$(CC) $(CFLAGS) $< -o $@
+
+$(TEMP_TARGET): $(SRC_DIR)/temperature_ecu.c | $(BIN_DIR)
+	@echo ">> Compiling Member 3 Engine Temperature ECU..."
+	$(CC) $(CFLAGS) $< -o $@
+
+$(SPEED_TEMP_TARGET): $(SRC_DIR)/speed_temp_ecu.c | $(BIN_DIR)
+	@echo ">> Compiling Member 3 Speed & Temperature ECU..."
+	$(CC) $(CFLAGS) $< -o $@
+
+.PHONY: all setup test teardown clean status deps install-service
+
+all: $(TARGET) $(STEERING_TARGET) $(RPM_TARGET) $(SPEED_TARGET) $(TEMP_TARGET) $(SPEED_TEMP_TARGET)
 
 setup:
 	@echo ">> Running vcan0 setup script..."
