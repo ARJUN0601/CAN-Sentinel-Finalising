@@ -11,7 +11,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
-
+from status_badge import StatusBadge
+from section_header import SectionHeader
 
 class DashboardPanel(QFrame):
     """Reusable dashboard panel."""
@@ -23,17 +24,11 @@ class DashboardPanel(QFrame):
 
         layout = QVBoxLayout(self)
 
-        heading = QLabel(title)
-        heading.setFont(QFont("Arial", 14, QFont.Bold))
+        self.status_badge = StatusBadge("DISCONNECTED")
+        layout.addWidget(self.status_badge, alignment=Qt.AlignRight)
 
-        info = QLabel(description)
-        info.setWordWrap(True)
-        info.setObjectName("mutedText")
-
-        layout.addWidget(heading)
-        layout.addWidget(info)
+        layout.addLayout(SectionHeader(title, description))
         layout.addStretch()
-
 
 class CANSentinelDashboard(QMainWindow):
 
