@@ -11,48 +11,103 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
+
 from status_badge import StatusBadge
 from section_header import SectionHeader
+
 
 class DashboardPanel(QFrame):
     """Reusable dashboard panel."""
 
-    def __init__(self, title, description):
+    def __init__(self, title, description, accent):
         super().__init__()
 
         self.setObjectName("dashboardPanel")
+        self.setMinimumHeight(380)
+
+        self.setStyleSheet(f"""
+            QFrame#dashboardPanel {{
+                background-color: #1E293B;
+                border: 1px solid #334155;
+                border-top: 3px solid {accent};
+                border-radius: 14px;
+            }}
+        """)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(20)
 
         self.status_badge = StatusBadge("DISCONNECTED")
         layout.addWidget(self.status_badge, alignment=Qt.AlignRight)
 
         layout.addLayout(SectionHeader(title, description))
+
+        # CAN Traffic placeholder
+        if title == "CAN Traffic":
+            content = QLabel("Waiting for CAN messages...")
+            content.setObjectName("placeholderText")
+            layout.addWidget(content)
+
+        # Threat Level placeholder
+        elif title == "Threat Level":
+            content = QLabel("No threat data available.")
+            content.setObjectName("placeholderText")
+            layout.addWidget(content)
+
+        # ECU Telemetry placeholders
+        elif title == "ECU Telemetry":
+            speed = QLabel("Vehicle Speed: -- km/h")
+            temperature = QLabel("Engine Temperature: -- °C")
+
+            speed.setObjectName("telemetryText")
+            temperature.setObjectName("telemetryText")
+
+            layout.addSpacing(5)
+            layout.addWidget(speed)
+            layout.addWidget(temperature)
+
         layout.addStretch()
+
 
 class CANSentinelDashboard(QMainWindow):
 
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("CAN-Sentinel | Security Dashboard")
+        self.setWindowTitle("CAN-Sentinel | Automotive Security")
         self.setMinimumSize(1100, 700)
 
         self.setStyleSheet("""
             QMainWindow, QWidget {
-                background-color: #111827;
-                color: #F9FAFB;
+                background-color: #0F172A;
+                color: #F8FAFC;
                 font-family: Arial;
             }
 
-            QFrame#dashboardPanel {
-                background-color: #1F2937;
-                border: 1px solid #374151;
+            QLabel#mutedText {
+                color: #94A3B8;
+                background: transparent;
+            }
+
+            QFrame#headerFrame {
+                background-color: #1E293B;
+                border: 1px solid #334155;
                 border-radius: 12px;
             }
 
-            QLabel#mutedText {
-                color: #9CA3AF;
+            QLabel#placeholderText {
+                color: #94A3B8;
+                background: transparent;
+                font-size: 13px;
+                padding: 12px 0px;
+            }
+
+            QLabel#telemetryText {
+                color: #E2E8F0;
+                background: transparent;
+                font-size: 14px;
+                padding: 10px 0px;
             }
         """)
 
@@ -60,48 +115,78 @@ class CANSentinelDashboard(QMainWindow):
         self.setCentralWidget(central_widget)
 
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(25, 25, 25, 25)
-        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(28, 25, 28, 22)
+        main_layout.setSpacing(24)
 
         # Header
-        header = QHBoxLayout()
+        header_frame = QFrame()
+        header_frame.setObjectName("headerFrame")
+
+        header = QHBoxLayout(header_frame)
+        header.setContentsMargins(22, 18, 22, 18)
 
         title = QLabel("CAN-SENTINEL")
-        title.setFont(QFont("Arial", 24, QFont.Bold))
+        title.setFont(QFont("Arial", 25, QFont.Bold))
 
-        subtitle = QLabel("AUTOMOTIVE SECURITY SYSTEM")
+        subtitle = QLabel("AUTOMOTIVE INTRUSION DETECTION")
         subtitle.setObjectName("mutedText")
+        subtitle.setFont(QFont("Arial", 10, QFont.Bold))
 
         header.addWidget(title)
         header.addStretch()
         header.addWidget(subtitle)
 
-        main_layout.addLayout(header)
+        main_layout.addWidget(header_frame)
 
         # Dashboard heading
-        heading = QLabel("Security Operations Dashboard")
-        heading.setFont(QFont("Arial", 18, QFont.Bold))
+        heading_section = QVBoxLayout()
+        heading_section.setSpacing(5)
 
-        main_layout.addWidget(heading)
+        heading = QLabel("Security Operations Dashboard")
+        heading.setFont(QFont("Arial", 20, QFont.Bold))
+
+        description = QLabel(
+            "Monitor vehicle communication, ECU telemetry and security threats."
+        )
+        description.setObjectName("mutedText")
+
+        heading_section.addWidget(heading)
+        heading_section.addWidget(description)
+
+        main_layout.addLayout(heading_section)
 
         # Dashboard panels
         panels_layout = QHBoxLayout()
-        panels_layout.setSpacing(15)
+        panels_layout.setSpacing(20)
 
         panels = [
-            ("CAN Traffic", "Live CAN packet display"),
-            ("Threat Level", "Security threat monitoring"),
-            ("ECU Telemetry", "Vehicle telemetry status")
+            (
+                "CAN Traffic",
+                "Live CAN packet monitoring",
+                "#38BDF8"
+            ),
+            (
+                "Threat Level",
+                "Automotive security threat monitoring",
+                "#F59E0B"
+            ),
+            (
+                "ECU Telemetry",
+                "Vehicle speed and temperature status",
+                "#34D399"
+            )
         ]
 
-        for title, description in panels:
-            panel = DashboardPanel(title, description)
-            panels_layout.addWidget(panel)
+        for title, description, accent in panels:
+            panel = DashboardPanel(title, description, accent)
+            panels_layout.addWidget(panel, 1)
 
-        main_layout.addLayout(panels_layout)
+        main_layout.addLayout(panels_layout, 1)
 
         # Footer
-        footer = QLabel("CAN-Sentinel | Week 3 UI Architecture")
+        footer = QLabel(
+            "CAN-Sentinel  |  Automotive Security Monitoring System  |  Week 3"
+        )
         footer.setAlignment(Qt.AlignCenter)
         footer.setObjectName("mutedText")
 
