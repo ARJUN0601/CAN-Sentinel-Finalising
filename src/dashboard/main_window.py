@@ -16,6 +16,54 @@ from status_badge import StatusBadge
 from section_header import SectionHeader
 
 
+class TelemetryCard(QFrame):
+    """Reusable card for displaying ECU telemetry values."""
+
+    def __init__(self, title, value, unit, accent):
+        super().__init__()
+
+        self.setObjectName("telemetryCard")
+
+        self.setStyleSheet("""
+            QFrame#telemetryCard {
+                background-color: #0F172A;
+                border: 1px solid #334155;
+                border-radius: 10px;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 16, 14, 16)
+        layout.setSpacing(10)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet("""
+            color: #94A3B8;
+            background: transparent;
+            font-size: 12px;
+            font-weight: bold;
+        """)
+
+        self.value_label = QLabel(value)
+        self.value_label.setStyleSheet(f"""
+            color: {accent};
+            background: transparent;
+            font-size: 25px;
+            font-weight: bold;
+        """)
+
+        unit_label = QLabel(unit)
+        unit_label.setStyleSheet("""
+            color: #64748B;
+            background: transparent;
+            font-size: 11px;
+        """)
+
+        layout.addWidget(title_label)
+        layout.addWidget(self.value_label)
+        layout.addWidget(unit_label)
+
+
 class DashboardPanel(QFrame):
     """Reusable dashboard panel."""
 
@@ -43,29 +91,38 @@ class DashboardPanel(QFrame):
 
         layout.addLayout(SectionHeader(title, description))
 
-        # CAN Traffic placeholder
         if title == "CAN Traffic":
             content = QLabel("Waiting for CAN messages...")
             content.setObjectName("placeholderText")
             layout.addWidget(content)
 
-        # Threat Level placeholder
         elif title == "Threat Level":
             content = QLabel("No threat data available.")
             content.setObjectName("placeholderText")
             layout.addWidget(content)
 
-        # ECU Telemetry placeholders
         elif title == "ECU Telemetry":
-            speed = QLabel("Vehicle Speed: -- km/h")
-            temperature = QLabel("Engine Temperature: -- °C")
+            telemetry_layout = QVBoxLayout()
+            telemetry_layout.setSpacing(14)
 
-            speed.setObjectName("telemetryText")
-            temperature.setObjectName("telemetryText")
+            self.speed_card = TelemetryCard(
+                "VEHICLE SPEED",
+                "--",
+                "km/h",
+                "#38BDF8"
+            )
 
-            layout.addSpacing(5)
-            layout.addWidget(speed)
-            layout.addWidget(temperature)
+            self.temperature_card = TelemetryCard(
+                "ENGINE TEMPERATURE",
+                "--",
+                "°C",
+                "#F59E0B"
+            )
+
+            telemetry_layout.addWidget(self.speed_card)
+            telemetry_layout.addWidget(self.temperature_card)
+
+            layout.addLayout(telemetry_layout)
 
         layout.addStretch()
 
@@ -101,13 +158,6 @@ class CANSentinelDashboard(QMainWindow):
                 background: transparent;
                 font-size: 13px;
                 padding: 12px 0px;
-            }
-
-            QLabel#telemetryText {
-                color: #E2E8F0;
-                background: transparent;
-                font-size: 14px;
-                padding: 10px 0px;
             }
         """)
 
@@ -177,8 +227,12 @@ class CANSentinelDashboard(QMainWindow):
             )
         ]
 
-        for title, description, accent in panels:
-            panel = DashboardPanel(title, description, accent)
+        for panel_title, panel_description, accent in panels:
+            panel = DashboardPanel(
+                panel_title,
+                panel_description,
+                accent
+            )
             panels_layout.addWidget(panel, 1)
 
         main_layout.addLayout(panels_layout, 1)
