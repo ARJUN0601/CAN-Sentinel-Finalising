@@ -22,6 +22,7 @@ class TelemetryCard(QFrame):
     def __init__(self, title, value, unit, accent):
         super().__init__()
 
+        self.unit = unit
         self.setObjectName("telemetryCard")
 
         self.setStyleSheet("""
@@ -52,8 +53,8 @@ class TelemetryCard(QFrame):
             font-weight: bold;
         """)
 
-        unit_label = QLabel(unit)
-        unit_label.setStyleSheet("""
+        self.unit_label = QLabel(unit)
+        self.unit_label.setStyleSheet("""
             color: #64748B;
             background: transparent;
             font-size: 11px;
@@ -61,7 +62,11 @@ class TelemetryCard(QFrame):
 
         layout.addWidget(title_label)
         layout.addWidget(self.value_label)
-        layout.addWidget(unit_label)
+        layout.addWidget(self.unit_label)
+
+    def set_value(self, value):
+        """Update the displayed telemetry value."""
+        self.value_label.setText(str(value))
 
 
 class DashboardPanel(QFrame):
@@ -125,6 +130,14 @@ class DashboardPanel(QFrame):
             layout.addLayout(telemetry_layout)
 
         layout.addStretch()
+
+    def update_speed(self, speed):
+        """Update vehicle speed."""
+        self.speed_card.set_value(f"{float(speed):.1f}")
+
+    def update_temperature(self, temperature):
+        """Update engine temperature."""
+        self.temperature_card.set_value(f"{float(temperature):.0f}")
 
 
 class CANSentinelDashboard(QMainWindow):
@@ -209,7 +222,9 @@ class CANSentinelDashboard(QMainWindow):
         panels_layout = QHBoxLayout()
         panels_layout.setSpacing(20)
 
-        panels = [
+        self.panels = {}
+
+        panel_details = [
             (
                 "CAN Traffic",
                 "Live CAN packet monitoring",
@@ -227,24 +242,33 @@ class CANSentinelDashboard(QMainWindow):
             )
         ]
 
-        for panel_title, panel_description, accent in panels:
+        for panel_title, panel_description, accent in panel_details:
             panel = DashboardPanel(
                 panel_title,
                 panel_description,
                 accent
             )
+
+            self.panels[panel_title] = panel
             panels_layout.addWidget(panel, 1)
 
         main_layout.addLayout(panels_layout, 1)
 
         # Footer
         footer = QLabel(
-            "CAN-Sentinel  |  Automotive Security Monitoring System  |  Week 3"
+            "CAN-Sentinel  |  Automotive Security Monitoring System  |  Week 4"
         )
         footer.setAlignment(Qt.AlignCenter)
         footer.setObjectName("mutedText")
 
         main_layout.addWidget(footer)
+
+    def update_telemetry(self, speed, temperature):
+        """Update both ECU telemetry cards."""
+        telemetry_panel = self.panels["ECU Telemetry"]
+
+        telemetry_panel.update_speed(speed)
+        telemetry_panel.update_temperature(temperature)
 
 
 if __name__ == "__main__":
