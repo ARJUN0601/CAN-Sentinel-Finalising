@@ -9,11 +9,13 @@ from PyQt5.QtWidgets import (
     QLabel,
     QFrame
 )
-from PyQt5.QtCore import Qt
+
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
 from status_badge import StatusBadge
 from section_header import SectionHeader
+from can_receiver import CANReceiver
 
 
 class TelemetryCard(QFrame):
@@ -263,12 +265,65 @@ class CANSentinelDashboard(QMainWindow):
 
         main_layout.addWidget(footer)
 
+        # Initialize CAN receiver
+        self.can_receiver = None
+
+        try:
+            self.can_receiver = CANReceiver("vcan0")
+            print("CAN receiver connected to vcan0.")
+
+        except Exception as error:
+            print("CAN receiver error:", error)
+
+        # Timer for receiving CAN messages
+        self.can_timer = QTimer(self)
+        self.can_timer.timeout.connect(self.read_can_data)
+
+        if self.can_receiver is not None:
+            self.can_timer.start(20)
+
     def update_telemetry(self, speed, temperature):
         """Update both ECU telemetry cards."""
         telemetry_panel = self.panels["ECU Telemetry"]
 
         telemetry_panel.update_speed(speed)
         telemetry_panel.update_temperature(temperature)
+
+    def read_can_data(self):
+        """Read CAN frames and update dashboard telemetry."""
+
+        if self.can_receiver is None:
+            return
+
+        try:
+            data = self.can_receiver.receive_telemetry(timeout=0.0)
+
+            if data is None:
+                return
+
+            telemetry_panel = self.panels["ECU Telemetry"]
+
+            if "speed" in data:
+                telemetry_panel.update_speed(data["speed"])
+                print("Live speed:", data["speed"], "km/h")
+
+            if "temperature" in data:
+                telemetry_panel.update_temperature(data["temperature"])
+                print("Live temperature:", data["temperature"], "°C")
+
+        except Exception as error:
+            print("CAN reception error:", error)
+            self.can_timer.stop()
+
+    def closeEvent(self, event):
+        """Close CAN receiver when dashboard exits."""
+
+        self.can_timer.stop()
+
+        if self.can_receiver is not None:
+            self.can_receiver.close()
+
+        event.accept()
 
 
 if __name__ == "__main__":
