@@ -265,14 +265,19 @@ class CANSentinelDashboard(QMainWindow):
 
         main_layout.addWidget(footer)
 
-        # Initialize CAN receiver
+        # CAN receiver
         self.can_receiver = None
+        telemetry_panel = self.panels["ECU Telemetry"]
 
         try:
             self.can_receiver = CANReceiver("vcan0")
+
+            telemetry_panel.status_badge.set_status("CONNECTED")
+
             print("CAN receiver connected to vcan0.")
 
         except Exception as error:
+            telemetry_panel.status_badge.set_status("DISCONNECTED")
             print("CAN receiver error:", error)
 
         # Timer for receiving CAN messages
@@ -303,6 +308,8 @@ class CANSentinelDashboard(QMainWindow):
 
             telemetry_panel = self.panels["ECU Telemetry"]
 
+            telemetry_panel.status_badge.set_status("MONITORING")
+
             if "speed" in data:
                 telemetry_panel.update_speed(data["speed"])
                 print("Live speed:", data["speed"], "km/h")
@@ -313,10 +320,15 @@ class CANSentinelDashboard(QMainWindow):
 
         except Exception as error:
             print("CAN reception error:", error)
+
+            self.panels["ECU Telemetry"].status_badge.set_status(
+                "DISCONNECTED"
+            )
+
             self.can_timer.stop()
 
     def closeEvent(self, event):
-        """Close CAN receiver when dashboard exits."""
+        """Close the CAN receiver when the dashboard exits."""
 
         self.can_timer.stop()
 
