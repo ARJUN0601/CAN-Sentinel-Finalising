@@ -1,4 +1,5 @@
 import sys
+import time
 
 from PyQt5.QtWidgets import (
     QApplication,
@@ -265,6 +266,9 @@ class CANSentinelDashboard(QMainWindow):
 
         main_layout.addWidget(footer)
 
+        # Track the last received telemetry message
+        self.last_telemetry_time = None
+
         # CAN receiver
         self.can_receiver = None
         telemetry_panel = self.panels["ECU Telemetry"]
@@ -295,7 +299,7 @@ class CANSentinelDashboard(QMainWindow):
         telemetry_panel.update_temperature(temperature)
 
     def read_can_data(self):
-        """Read CAN frames and update dashboard telemetry."""
+        """Read CAN frames and detect stale telemetry."""
 
         if self.can_receiver is None:
             return
@@ -303,20 +307,26 @@ class CANSentinelDashboard(QMainWindow):
         try:
             data = self.can_receiver.receive_telemetry(timeout=0.0)
 
-            if data is None:
-                return
-
             telemetry_panel = self.panels["ECU Telemetry"]
 
-            telemetry_panel.status_badge.set_status("MONITORING")
+            if data is not None:
+                self.last_telemetry_time = time.monotonic()
 
-            if "speed" in data:
-                telemetry_panel.update_speed(data["speed"])
-                print("Live speed:", data["speed"], "km/h")
+                telemetry_panel.status_badge.set_status("MONITORING")
 
-            if "temperature" in data:
-                telemetry_panel.update_temperature(data["temperature"])
-                print("Live temperature:", data["temperature"], "°C")
+                if "speed" in data:
+                    telemetry_panel.update_speed(data["speed"])
+                    print("Live speed:", data["speed"], "km/h")
+
+                if "temperature" in data:
+                    telemetry_panel.update_temperature(data["temperature"])
+                    print("Live temperature:", data["temperature"], "°C")
+
+            elif self.last_telemetry_time is not None:
+                elapsed = time.monotonic() - self.last_telemetry_time
+
+                if elapsed > 2.0:
+                    telemetry_panel.status_badge.set_status("WARNING")
 
         except Exception as error:
             print("CAN reception error:", error)
