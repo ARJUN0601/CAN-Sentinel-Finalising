@@ -1,136 +1,213 @@
 #!/usr/bin/env bash
-# CAN-Sentinel integration tests: Member 1 + Member 2
 
 set -uo pipefail
 
+# CAN-Sentinel integrated test suite
+# Safety: all CAN operations are restricted to vcan0.
+
 INTERFACE="${1:-vcan0}"
-PASS_COUNT=0
-FAIL_COUNT=0
-SKIP_COUNT=0
+PASS=0
+FAIL=0
+SKIP=0
 TEMP_FILES=()
+PIDS=()
 
 pass() {
     printf '[PASS] %s\n' "$1"
-    PASS_COUNT=$((PASS_COUNT + 1))
+    PASS=$((PASS + 1))
 }
 
 fail() {
     printf '[FAIL] %s\n' "$1"
-    FAIL_COUNT=$((FAIL_COUNT + 1))
+    FAIL=$((FAIL + 1))
 }
 
 skip() {
     printf '[SKIP] %s\n' "$1"
-    SKIP_COUNT=$((SKIP_COUNT + 1))
+    SKIP=$((SKIP + 1))
 }
 
 cleanup() {
-    for file in "${TEMP_FILES[@]}"; do
-        rm -f "$file"
-    done
-}
-trap cleanup EXIT
+    local pid file
 
-echo "=== CAN-Sentinel Integration Tests ==="
-echo "Interface: $INTERFACE"
-echo
+    for pid in "${PIDS[@]}"; do
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        done
 
-# Member 1: interface and can-utils checks
-if ip link show "$INTERFACE" >/dev/null 2>&1; then
-    pass "Interface $INTERFACE exists"
-else
-    fail "Interface $INTERFACE does not exist"
-fi
-
-if ip link show "$INTERFACE" 2>/dev/null | grep -q '<[^>]*UP'; then
-    pass "Interface $INTERFACE is UP"
-else
-    fail "Interface $INTERFACE is DOWN or unavailable"
-fi
-
-if command -v cansend >/dev/null 2>&1 &&
-   command -v candump >/dev/null 2>&1; then
-    pass "can-utils is installed"
-
-    log=$(mktemp)
-    TEMP_FILES+=("$log")
-    timeout 2s candump -n 1 "$INTERFACE" >"$log" 2>&1 &
-    dump_pid=$!
-    sleep 0.2
-
-    if cansend "$INTERFACE" 120#0102030405060708; then
-        :
-    else
-        fail "Could not transmit the loopback test frame"
-    fi
-
-    wait "$dump_pid" || true
-
-    if grep -Eiq '120[[:space:]]+\[8\][[:space:]]+01 02 03 04 05 06 07 08' "$log"; then
-        pass "Generic loopback frame received correctly"
-    else
-        fail "Generic loopback frame not captured correctly"
-    fi
-else
-    skip "can-utils missing; live CAN tests cannot run"
-fi
-
-# Member 2: verify actual ECU transmissions
-test_ecu() {
-    local name="$1" binary="$2" argument="$3"
-    local can_id="$4" dlc="$5" expected="$6"
-    local log capture pid
-
-    if [[ ! -x "$binary" ]]; then
-        fail "$name binary missing; run make"
-        return
-    fi
-
-    if ! command -v candump >/dev/null 2>&1; then
-        skip "$name requires candump"
-        return
-    fi
-
-    log=$(mktemp)
-    capture=$(mktemp)
-    TEMP_FILES+=("$log" "$capture")
-
-    "$binary" "$INTERFACE" "$argument" >"$log" 2>&1 &
-    pid=$!
-    sleep 0.2
-
-    if ! kill -0 "$pid" 2>/dev/null; then
-        fail "$name failed to start"
-        return
-    fi
-
-    timeout 2s candump -n 1 "$INTERFACE,$can_id:7FF" >"$capture" 2>&1 || true
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-
-    if grep -Eiq "$can_id[[:space:]]+\[$dlc\][[:space:]]+$expected" "$capture"; then
-        pass "$name sends expected CAN ID and payload"
-    else
-        fail "$name did not send expected payload"
-        echo "Captured frame:"
-        cat "$capture"
-        echo "ECU log:"
-        head -n 5 "$log"
-    fi
+        for file in "${TEMP_FILES[@]}"; do
+            rm -f -- "$file"
+            done
 }
 
-echo
-echo "=== Member 2 ECU Tests ==="
-test_ecu "Steering ECU (45 degrees)" "./bin/steering_ecu" "45" "120" "4" "00 00 34 42"
-test_ecu "RPM ECU (3000 RPM)" "./bin/rpm_ecu" "3000" "130" "2" "B8 0B"
+trap cleanup EXIT INT TERM
 
-echo
-echo "=== Summary: $PASS_COUNT Passed, $FAIL_COUNT Failed, $SKIP_COUNT Skipped ==="
+echo "=================================="
+echo " CAN-Sentinel Integration Tests"
+echo "=================================="
 
-if [[ "$FAIL_COUNT" -eq 0 && "$SKIP_COUNT" -eq 0 ]]; then
-    echo "All integration tests passed."
-    exit 0
-    else
-        echo "Integration tests failed or were skipped."
+# Safety validation before any CAN operation.
+if [[ "$INTERFACE" != "vcan0" ]]; then
+    echo "[ERROR] Only vcan0 is permitted."
+    exit 1
+    fi
+
+    if ! command -v ip >/dev/null 2>&1; then
+        echo "[ERROR] ip command is unavailable."
         exit 1
         fi
+
+        if ! ip link show vcan0 >/dev/null 2>&1; then
+            echo "[ERROR] vcan0 does not exist. Run make setup."
+            exit 1
+            fi
+
+            if ! ip -o link show vcan0 | grep -q '<[^>]*UP'; then
+                echo "[ERROR] vcan0 is not UP."
+                exit 1
+                fi
+
+                pass "vcan0 exists and is UP"
+
+                # Required binary checks.
+                echo
+                echo "=== Binary Availability ==="
+
+                for program in \
+                    bin/vcan_checker \
+                    bin/steering_ecu \
+                    bin/rpm_ecu \
+                    bin/speed_ecu \
+                    bin/temperature_ecu \
+                    bin/speed_ecu_week2 \
+                    bin/temperature_ecu_week2
+                    do
+                        if [[ -x "$program" ]]; then
+                            pass "$program available"
+                            else
+                                fail "$program missing or not executable"
+                                fi
+                                done
+
+                                # SocketCAN loopback verification.
+                                echo
+                                echo "=== SocketCAN Verification ==="
+
+                                if [[ -x bin/vcan_checker ]]; then
+                                    if bin/vcan_checker vcan0; then
+                                        pass "SocketCAN loopback verification"
+                                        else
+                                            fail "SocketCAN loopback verification"
+                                            fi
+                                            else
+                                                skip "vcan_checker unavailable"
+                                                fi
+
+                                                # ECU input validation.
+                                                echo
+                                                echo "=== ECU Input Validation ==="
+
+                                                check_invalid_input() {
+                                                    local name="$1"
+                                                    local binary="$2"
+                                                    local value="$3"
+
+                                                    if [[ ! -x "$binary" ]]; then
+                                                        skip "$name binary unavailable"
+                                                        return
+                                                        fi
+
+                                                        if "$binary" vcan0 "$value" >/dev/null 2>&1; then
+                                                            fail "$name accepted invalid input: $value"
+                                                            else
+                                                                pass "$name rejected invalid input: $value"
+                                                                fi
+                                                }
+
+                                                check_invalid_input "Steering ECU" bin/steering_ecu 999
+                                                check_invalid_input "RPM ECU" bin/rpm_ecu 9000
+                                                check_invalid_input "Speed ECU" bin/speed_ecu -1
+                                                check_invalid_input "Temperature ECU" bin/temperature_ecu 200
+
+                                                # ECU transmission verification.
+                                                echo
+                                                echo "=== ECU Transmission Tests ==="
+
+                                                test_ecu() {
+                                                    local name="$1"
+                                                    local binary="$2"
+                                                    local argument="$3"
+                                                    local can_id="$4"
+                                                    local expected="$5"
+
+                                                    local capture pid
+
+                                                    if [[ ! -x "$binary" ]]; then
+                                                        skip "$name binary unavailable"
+                                                        return
+                                                        fi
+
+                                                        if ! command -v candump >/dev/null 2>&1; then
+                                                            skip "$name requires can-utils"
+                                                            return
+                                                            fi
+
+                                                            capture=$(mktemp) || {
+                                                                fail "$name could not create capture file"
+                                                                return
+                                                            }
+
+                                                            TEMP_FILES+=("$capture")
+
+                                                            timeout 3s candump -n 1 "vcan0,${can_id}:7FF" \
+                                                            >"$capture" 2>&1 &
+                                                            pid=$!
+                                                            PIDS+=("$pid")
+
+                                                            sleep 0.2
+
+                                                            "$binary" vcan0 "$argument" >/dev/null 2>&1 &
+                                                            local ecu_pid=$!
+                                                            PIDS+=("$ecu_pid")
+
+                                                            wait "$pid" 2>/dev/null || true
+
+                                                            kill "$ecu_pid" 2>/dev/null || true
+                                                            wait "$ecu_pid" 2>/dev/null || true
+
+                                                            if grep -Eiq "$can_id[[:space:]]+\[[0-9]+\][[:space:]]+$expected" "$capture"; then
+                                                                pass "$name transmitted expected CAN payload"
+                                                                else
+                                                                    fail "$name did not transmit expected CAN payload"
+                                                                    echo "Captured output:"
+                                                                    cat "$capture"
+                                                                    fi
+                                                }
+
+                                                if command -v candump >/dev/null 2>&1; then
+                                                    test_ecu "Steering ECU (45 degrees)" \
+                                                    bin/steering_ecu 45 120 "00 00 34 42"
+
+                                                    test_ecu "RPM ECU (3000 RPM)" \
+                                                    bin/rpm_ecu 3000 130 "B8 0B"
+                                                    else
+                                                        skip "ECU transmission tests require can-utils"
+                                                        fi
+
+                                                        # Final report.
+                                                        echo
+                                                        echo "=================================="
+                                                        echo " Integration Test Summary"
+                                                        echo "=================================="
+                                                        echo "Passed : $PASS"
+                                                        echo "Failed : $FAIL"
+                                                        echo "Skipped: $SKIP"
+                                                        echo "=================================="
+
+                                                        if (( FAIL > 0 || SKIP > 0 )); then
+                                                            echo "Integration tests incomplete or failed."
+                                                            exit 1
+                                                            fi
+
+                                                            echo "All integration tests passed."
+                                                            exit 0

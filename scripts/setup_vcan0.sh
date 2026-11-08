@@ -1,170 +1,114 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# Project CAN-Sentinel: Week 1 - Member 1 Deliverable
-# File: scripts/setup_vcan0.sh
-# Description: Automated configuration and bring-up script for Linux SocketCAN (vcan0)
-# Target Architecture: Linux x86_64 / aarch64 (Ubuntu, Debian, Kali, Raspberry Pi OS)
-# License: MIT
-# ==============================================================================
+# CAN-Sentinel: Safe SocketCAN virtual interface setup
 
 set -euo pipefail
 
-# ANSI Color Codes for terminal diagnostics
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 INTERFACE_NAME="${1:-vcan0}"
 ENABLE_CANFD="${2:-false}"
 TXQUEUELEN=1000
 
-log_info() {
-    echo -e "${CYAN}[CAN-SENTINEL INFO]${NC} $1"
-}
+log_info()    { echo -e "${CYAN}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+log_warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error()   { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
-log_success() {
-    echo -e "${GREEN}[CAN-SENTINEL SUCCESS]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[CAN-SENTINEL WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[CAN-SENTINEL ERROR]${NC} $1" >&2
-}
-
-# 1. Verify root / sudo privileges
 verify_privileges() {
     if [[ "$EUID" -ne 0 ]]; then
-        log_error "This script requires root privileges to configure network interfaces."
-        echo -e "Please execute with sudo: ${BOLD}sudo $0 [interface_name] [enable_canfd]${NC}"
+        log_error "Root privileges required."
+        echo "Run: sudo $0 [interface_name] [enable_canfd]"
         exit 1
     fi
-    log_info "Root permissions verified."
 }
 
-# 2. Check for required kernel and tooling dependencies
+validate_interface_name() {
+    if [[ ! "$INTERFACE_NAME" =~ ^[a-zA-Z0-9_.-]{1,15}$ ]]; then
+        log_error "Invalid interface name: $INTERFACE_NAME"
+        exit 1
+    fi
+
+    if [[ "$ENABLE_CANFD" != "true" && "$ENABLE_CANFD" != "false" ]]; then
+        log_error "CAN-FD option must be true or false."
+        exit 1
+    fi
+}
+
 check_dependencies() {
-    log_info "Checking required Linux networking utilities..."
-    
-    local missing_tools=()
-    for tool in ip modprobe lsmod; do
-        if ! command -v "$tool" &> /dev/null; then
-            missing_tools+=("$tool")
-        fi
+    local missing=()
+
+    for tool in ip modprobe grep; do
+        command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
     done
 
-    if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        log_error "Missing required utilities: ${missing_tools[*]}"
-        log_error "Install iproute2 and kmod packages using: apt-get install iproute2 kmod"
+    if (( ${#missing[@]} > 0 )); then
+        log_error "Missing utilities: ${missing[*]}"
+        log_error "Install iproute2 and kmod."
         exit 1
     fi
 
-    # Optional check for can-utils (candump, cansend)
-    if ! command -v cansend &> /dev/null || ! command -v candump &> /dev/null; then
-        log_warn "can-utils is not detected. Recommended for Member 2-5 testing."
-        log_warn "Install via: sudo apt-get update && sudo apt-get install -y can-utils"
-    else
-        log_info "can-utils detected on system."
+    if ! command -v cansend >/dev/null 2>&1 ||
+       ! command -v candump >/dev/null 2>&1; then
+        log_warn "can-utils is missing. Install it for CAN testing."
     fi
 }
 
-# 3. Load Linux Kernel CAN Modules
 load_kernel_modules() {
-    log_info "Loading Linux SocketCAN kernel modules (can, vcan)..."
-    
-    # Load generic CAN subsystem
-    if ! modprobe can; then
-        log_error "Failed to load 'can' kernel module. Verify kernel CAN support."
-        exit 1
-    fi
-
-    # Load Virtual CAN (vcan) driver
-    if ! modprobe vcan; then
-        log_error "Failed to load 'vcan' kernel module. Please check /lib/modules/$(uname -r)/."
-        exit 1
-    fi
-
-    # Confirm loaded modules
-    if grep -q "^vcan " /proc/modules; then
-        log_success "Kernel module 'vcan' is actively loaded."
-    else
-        log_error "'vcan' module was not found in active module list."
-        exit 1
-    fi
+    log_info "Loading SocketCAN modules..."
+    modprobe can
+    modprobe vcan
+    log_success "CAN and vcan modules loaded."
 }
 
-# 4. Create and Configure SocketCAN Virtual Interface
 configure_interface() {
-    log_info "Configuring interface '${INTERFACE_NAME}'..."
+    if ip link show "$INTERFACE_NAME" >/dev/null 2>&1; then
+        if ! ip -details link show "$INTERFACE_NAME" | grep -q "vcan"; then
+            log_error "$INTERFACE_NAME exists but is not a vcan interface."
+            log_error "Refusing to modify an existing non-vcan interface."
+            exit 1
+        fi
 
-    # Check if interface already exists
-    if ip link show "${INTERFACE_NAME}" &> /dev/null; then
-        log_warn "Interface '${INTERFACE_NAME}' already exists. Resetting state..."
-        ip link set down "${INTERFACE_NAME}" 2>/dev/null || true
-        ip link delete "${INTERFACE_NAME}" 2>/dev/null || true
-    fi
-
-    # Add virtual CAN interface
-    log_info "Creating '${INTERFACE_NAME}' of type 'vcan'..."
-    ip link add dev "${INTERFACE_NAME}" type vcan
-
-    # Optional CAN-FD (Flexible Data-rate) MTU configuration
-    if [[ "${ENABLE_CANFD}" == "true" ]]; then
-        log_info "Enabling CAN-FD (MTU 72) on ${INTERFACE_NAME}..."
-        ip link set "${INTERFACE_NAME}" mtu 72
+        log_info "Existing vcan interface found; reusing it."
+        ip link set dev "$INTERFACE_NAME" down || true
     else
-        # Standard Classic CAN 2.0A/B MTU is 16 bytes
-        ip link set "${INTERFACE_NAME}" mtu 16
+        log_info "Creating virtual CAN interface: $INTERFACE_NAME"
+        ip link add dev "$INTERFACE_NAME" type vcan
     fi
 
-    # Configure transmit queue length to prevent frame drops under heavy ECU simulation
-    ip link set "${INTERFACE_NAME}" txqueuelen "${TXQUEUELEN}"
+    if [[ "$ENABLE_CANFD" == "true" ]]; then
+        ip link set dev "$INTERFACE_NAME" mtu 72
+    else
+        ip link set dev "$INTERFACE_NAME" mtu 16
+    fi
 
-    # Bring the virtual CAN link UP
-    log_info "Bringing interface '${INTERFACE_NAME}' UP..."
-    ip link set up "${INTERFACE_NAME}"
+    ip link set dev "$INTERFACE_NAME" txqueuelen "$TXQUEUELEN"
+    ip link set dev "$INTERFACE_NAME" up
 
-    log_success "Interface '${INTERFACE_NAME}' brought UP successfully."
+    log_success "Interface $INTERFACE_NAME configured."
 }
 
-# 5. Verify Operational Status and Print Deliverable Evidence
 verify_operational() {
-    log_info "Verifying operational link state..."
-
-    # Check link flags
-    local if_info
-    if_info=$(ip -details link show "${INTERFACE_NAME}")
-
-    if echo "$if_info" | grep -q "UP"; then
-        log_success "=========================================================="
-        log_success " MEMBER 1 DELIVERABLE: OPERATIONAL ${INTERFACE_NAME} CONFIRMED! "
-        log_success "=========================================================="
-        echo -e "${BOLD}Interface Details:${NC}"
-        echo "$if_info"
-        echo ""
-        log_info "SocketCAN is now ready for Member 2 & 3 (C Mock ECUs) and Member 4 (Python Capture)!"
-        echo -e "Quick test with can-utils:"
-        echo -e "  Terminal A: ${BOLD}candump ${INTERFACE_NAME}${NC}"
-        echo -e "  Terminal B: ${BOLD}cansend ${INTERFACE_NAME} 120#0102030405060708${NC}"
-    else
-        log_error "Interface '${INTERFACE_NAME}' exists but is NOT in UP state."
+    if ! ip link show "$INTERFACE_NAME" | grep -q "UP"; then
+        log_error "Interface is not UP."
         exit 1
     fi
+
+    log_success "SocketCAN interface is operational."
+    ip -details link show "$INTERFACE_NAME"
+
+    echo
+    echo "Test commands:"
+    echo "  Terminal A: candump $INTERFACE_NAME"
+    echo "  Terminal B: cansend $INTERFACE_NAME 120#0102030405060708"
 }
 
 main() {
-    echo -e "${BOLD}${CYAN}"
-    echo "=========================================================="
-    echo "   CAN-SENTINEL: MEMBER 1 LINUX SOCKETCAN SETUP SCRIPT    "
-    echo "=========================================================="
-    echo -e "${NC}"
-    
     verify_privileges
+    validate_interface_name
     check_dependencies
     load_kernel_modules
     configure_interface
