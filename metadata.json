@@ -1,0 +1,8 @@
+{
+  "name": "CAN-Sentinel",
+  "description": "Automotive Cybersecurity Intrusion Detection System and SocketCAN Pipeline Dashboard",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
