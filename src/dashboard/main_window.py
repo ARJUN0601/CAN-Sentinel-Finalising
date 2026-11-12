@@ -1,6 +1,8 @@
+
 import sys
 import threading
 import time
+from collections import defaultdict, deque
 
 import can
 
@@ -17,12 +19,19 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from section_header import SectionHeader
-from status_badge import StatusBadge
+from .section_header import SectionHeader
+from .status_badge import StatusBadge
+
+
+# Demo message-rate detection rule
+WINDOW_SECONDS = 2.0
+THRESHOLD = 5
+ALERT_REFRESH_MS = 250
+TELEMETRY_STALE_SECONDS = 2.0
 
 
 class CANBridge(QObject):
-    """Deliver CAN data safely to the Qt UI thread."""
+    """Deliver CAN events safely to the Qt UI thread."""
 
     frame_received = pyqtSignal(str, object)
     connection_changed = pyqtSignal(bool)
@@ -154,6 +163,10 @@ class CANSentinelDashboard(QMainWindow):
         self.reader = None
         self.closing = False
 
+        # Message-rate detector state
+        self.recent = defaultdict(deque)
+        self.active_alert_ids = set()
+
         self.setWindowTitle("CAN-Sentinel | Automotive Security")
         self.setMinimumSize(1100, 700)
 
@@ -223,7 +236,7 @@ class CANSentinelDashboard(QMainWindow):
 
         main_layout.addLayout(panels_layout, 1)
 
-        # CAN traffic view
+        # CAN traffic
         traffic_panel = self.panels["CAN Traffic"]
 
         self.can_traffic_view = QPlainTextEdit()
@@ -232,6 +245,7 @@ class CANSentinelDashboard(QMainWindow):
             "Waiting for CAN frames..."
         )
         self.can_traffic_view.setMaximumBlockCount(500)
+
         traffic_panel.content_layout.insertWidget(
             traffic_panel.content_layout.count() - 1,
             self.can_traffic_view,
@@ -239,19 +253,24 @@ class CANSentinelDashboard(QMainWindow):
 
         # Threat information
         threat_panel = self.panels["Threat Level"]
-        self.threat_label = QLabel("No threat events received.")
+
+        self.threat_label = QLabel(
+            "Waiting for CAN traffic."
+        )
         self.threat_label.setWordWrap(True)
+
         threat_panel.content_layout.insertWidget(
             threat_panel.content_layout.count() - 1,
             self.threat_label,
         )
 
-        # Telemetry cards
+        # ECU telemetry
         telemetry_panel = self.panels["ECU Telemetry"]
 
         self.speed_card = TelemetryCard(
             "VEHICLE SPEED", "km/h", "#38BDF8"
         )
+
         self.temperature_card = TelemetryCard(
             "ENGINE TEMPERATURE", "°C", "#F59E0B"
         )
@@ -260,6 +279,7 @@ class CANSentinelDashboard(QMainWindow):
             telemetry_panel.content_layout.count() - 1,
             self.speed_card,
         )
+
         telemetry_panel.content_layout.insertWidget(
             telemetry_panel.content_layout.count() - 1,
             self.temperature_card,
@@ -274,23 +294,29 @@ class CANSentinelDashboard(QMainWindow):
 
         # Thread-safe CAN event bridge
         self.bridge = CANBridge()
+
         self.bridge.frame_received.connect(self.process_frame)
         self.bridge.connection_changed.connect(
             self.update_connection_status
         )
         self.bridge.error_occurred.connect(self.handle_can_error)
 
-        # Stale telemetry monitor
+        # Telemetry stale monitor
         self.stale_timer = QTimer(self)
         self.stale_timer.timeout.connect(self.check_stale_telemetry)
         self.stale_timer.start(500)
 
-        # Start exactly one CAN reader
+        # Rate-alert expiration timer
+        self.alert_timer = QTimer(self)
+        self.alert_timer.timeout.connect(self.refresh_rate_alerts)
+        self.alert_timer.start(ALERT_REFRESH_MS)
+
+        # Start one CAN reader
         self.reader = CANReader(self.bridge, self.interface)
         self.reader.start()
 
     def process_frame(self, text, message):
-        """Update raw traffic and decode telemetry in the UI thread."""
+        """Process incoming CAN traffic and decode telemetry."""
 
         self.can_traffic_view.appendPlainText(text)
 
@@ -318,8 +344,11 @@ class CANSentinelDashboard(QMainWindow):
             self.temperature_card.set_value(str(temperature))
             self.record_telemetry()
 
+        self.record_message_rate(can_id)
+
     def record_telemetry(self):
         self.last_telemetry_time = time.monotonic()
+
         self.panels["ECU Telemetry"].status_badge.set_status(
             "MONITORING"
         )
@@ -330,9 +359,62 @@ class CANSentinelDashboard(QMainWindow):
 
         elapsed = time.monotonic() - self.last_telemetry_time
 
-        if elapsed > 2.0:
+        if elapsed > TELEMETRY_STALE_SECONDS:
             self.panels["ECU Telemetry"].status_badge.set_status(
                 "WARNING"
+            )
+
+    def record_message_rate(self, can_id):
+        now = time.monotonic()
+        timestamps = self.recent[can_id]
+
+        timestamps.append(now)
+
+        self.refresh_rate_alerts()
+
+    def refresh_rate_alerts(self):
+        """Expire old rate events even when no CAN frames arrive."""
+
+        now = time.monotonic()
+
+        for observed_id, timestamps in list(self.recent.items()):
+            while (
+                timestamps
+                and now - timestamps[0] > WINDOW_SECONDS
+            ):
+                timestamps.popleft()
+
+            if len(timestamps) < THRESHOLD:
+                self.active_alert_ids.discard(observed_id)
+
+            if not timestamps:
+                self.recent.pop(observed_id, None)
+
+        if self.active_alert_ids:
+            ids = ", ".join(
+                f"0x{item:03X}"
+                for item in sorted(self.active_alert_ids)
+            )
+
+            self.threat_label.setText(
+                f"HIGH MESSAGE RATE\n"
+                f"Triggered CAN IDs: {ids}\n"
+                f"Threshold: {THRESHOLD} messages / "
+                f"{WINDOW_SECONDS:.0f} seconds per CAN ID.\n"
+                "Demo heuristic; not proof of an attack."
+            )
+
+            self.panels["Threat Level"].status_badge.set_status(
+                "WARNING"
+            )
+
+        else:
+            self.threat_label.setText(
+                "No high-message-rate activity detected."
+            )
+
+            self.panels["Threat Level"].status_badge.set_status(
+                "MONITORING"
             )
 
     def update_connection_status(self, connected):
@@ -346,14 +428,19 @@ class CANSentinelDashboard(QMainWindow):
             )
 
     def handle_can_error(self, error):
-        self.threat_label.setText(f"CAN reader error: {error}")
+        self.threat_label.setText(
+            f"CAN reader error: {error}"
+        )
+
         self.panels["CAN Traffic"].status_badge.set_status(
             "DISCONNECTED"
         )
 
     def closeEvent(self, event):
         self.closing = True
+
         self.stale_timer.stop()
+        self.alert_timer.stop()
 
         if self.reader is not None:
             self.reader.stop()
